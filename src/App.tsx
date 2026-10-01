@@ -1,0 +1,50 @@
+import { useEffect, useRef, useState } from 'react';
+import type { FormEvent } from 'react';
+import { Icon } from './components/Icon';
+import { qualify } from './engine/qualify';
+import { summarize, translations } from './i18n';
+import type { Language, Lead } from './types';
+const emptyLead: Lead = { name: '', company: '', service: 'support', budget: 'starter', timeline: 'month', need: '' };
+type Screen = 'welcome' | 'form' | 'processing' | 'result' | 'company';
+export default function App() {
+ const [lang, setLang] = useState<Language>('ar');
+ const [screen, setScreen] = useState<Screen>('welcome');
+ const [lead, setLead] = useState<Lead>({ ...emptyLead });
+ const [step, setStep] = useState(0);
+ const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+   try { return localStorage.getItem('lead-demo-theme') === 'light' ? 'light' : 'dark'; }
+   catch { return 'dark'; }
+ });
+ const heading = useRef<HTMLHeadingElement>(null);
+ const t = translations[lang];
+ const result = qualify(lead);
+ const current = screen === 'form' ? 0 : screen === 'processing' ? 1 : screen === 'result' ? 2 : 3;
+ useEffect(() => { document.documentElement.lang = lang; document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr'; document.title = t.title; }, [lang, t.title]);
+ useEffect(() => {
+   document.documentElement.dataset.theme = theme;
+   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#000000' : '#F7F8FA');
+   try { localStorage.setItem('lead-demo-theme', theme); } catch { /* Appearance still works without storage. */ }
+ }, [theme]);
+ useEffect(() => { heading.current?.focus(); window.scrollTo({ top: 0 }); }, [screen]);
+ useEffect(() => {
+   if (screen !== 'processing') return;
+   const timer = window.setInterval(() => setStep(s => Math.min(s + 1, 6)), 5000 / 7);
+   const finish = window.setTimeout(() => setScreen('result'), 5000);
+   return () => { window.clearInterval(timer); window.clearTimeout(finish); };
+ }, [screen]);
+ function update<K extends keyof Lead>(key: K, value: Lead[K]) { setLead(l => ({ ...l, [key]: value })); }
+ function submit(e: FormEvent) { e.preventDefault(); setLead(l => ({ ...l, name: l.name.trim(), company: l.company.trim(), need: l.need.trim() })); setStep(0); setScreen('processing'); }
+ function home() { if (screen === 'welcome') return; setLead({ ...emptyLead }); setStep(0); setScreen('welcome'); }
+ function reset() { setLead({ ...emptyLead }); setStep(0); setScreen('form'); }
+ const status = <span className={`status ${result.status}`}>{t.statuses[result.status]}</span>;
+ const summary = <section className="summary"><h3><Icon/>{t.summary}</h3><p>{summarize(lead, result, lang)}</p></section>;
+ const reasons = <ul className="reasons">{result.reasons.map(reason => <li key={reason}><span className={['supported','clear','viable','urgent'].includes(reason) ? 'positive' : ''}><Icon kind="check"/></span>{t.reasons[reason]}</li>)}</ul>;
+ return <div className="app"><header className="header"><div className="brand"><span className="brand-icon"><Icon/></span><span>{t.agent}</span></div><div className="header-controls"><button type="button" className="icon-button" aria-label={t.home} title={t.home} onClick={home}><Icon kind="home"/></button><button type="button" className="icon-button" aria-label={theme === 'dark' ? t.lightMode : t.darkMode} title={theme === 'dark' ? t.lightMode : t.darkMode} onClick={() => setTheme(value => value === 'dark' ? 'light' : 'dark')}><Icon kind={theme === 'dark' ? 'sun' : 'moon'}/></button><div className="language" aria-label={t.languageLabel}>{(['ar','en'] as const).map(l => <button key={l} lang={l} aria-pressed={lang === l} onClick={() => setLang(l)}>{l.toUpperCase()}</button>)}</div></div></header>
+ <main>{screen !== 'welcome' && <nav className="progress" aria-label={t.progressLabel}>{t.steps.map((label,i) => <span key={label} className={i === current ? 'active' : i < current ? 'done' : ''} aria-current={i === current ? 'step' : undefined}><b>{i < current ? <Icon kind="check"/> : i + 1}</b><span>{label}</span></span>)}</nav>}
+ {screen === 'welcome' && <section className="welcome"><div className="hero-symbol"><Icon/></div><span className="eyebrow"><span className="dot"/>{t.badge}</span><h1 ref={heading} tabIndex={-1}>{t.title}</h1><p className="hero-copy">{t.intro}</p><button className="primary" onClick={() => setScreen('form')}>{t.start}<Icon kind="arrow" className="arrow"/></button><div className="flow-preview">{t.steps.map((label,i) => <span key={label}><b>{String(i+1).padStart(2,'0')}</b>{label}{i < 3 && <Icon kind="arrow" className="arrow"/>}</span>)}</div></section>}
+ {screen === 'form' && <><div className="screen-heading compact-heading"><span className="eyebrow">01 / {t.steps[0]}</span><h1 ref={heading} tabIndex={-1}>{t.incoming}</h1><p>{t.incomingSub}</p></div><form className="card form" onSubmit={submit}><div className="form-top"><h2>{t.steps[0]}</h2><button type="button" className="text-button" onClick={() => setLead({ name: t.sampleName, company: t.sampleCompany, service: 'support', budget: 'growth', timeline: 'month', need: t.sampleNeed })}>{t.sample}</button></div><div className="form-grid"><label>{t.name}<input required maxLength={80} value={lead.name} onChange={e => update('name', e.target.value)} pattern=".*\S.*" autoComplete="name"/></label><label>{t.company}<input required maxLength={120} value={lead.company} onChange={e => update('company', e.target.value)} pattern=".*\S.*" autoComplete="organization"/></label><label>{t.service}<select value={lead.service} onChange={e => update('service', e.target.value as Lead['service'])}>{Object.entries(t.services).map(([v,label]) => <option key={v} value={v}>{label}</option>)}</select></label><label>{t.budget}<select value={lead.budget} onChange={e => update('budget', e.target.value as Lead['budget'])}>{Object.entries(t.budgets).map(([v,label]) => <option key={v} value={v}>{label}</option>)}</select></label><label className="full">{t.timeline}<select value={lead.timeline} onChange={e => update('timeline', e.target.value as Lead['timeline'])}>{Object.entries(t.timelines).map(([v,label]) => <option key={v} value={v}>{label}</option>)}</select></label><label className="full">{t.need}<textarea required minLength={1} maxLength={2000} value={lead.need} onChange={e => update('need', e.target.value)} placeholder={t.placeholder}/></label></div><div className="form-actions"><button type="button" className="secondary" onClick={() => setScreen('welcome')}>{t.back}</button><button className="primary" disabled={!lead.need.trim() || !lead.name.trim() || !lead.company.trim()}>{t.submit}<Icon kind="arrow" className="arrow"/></button></div></form></>}
+ {screen === 'processing' && <section className="processing card"><div className="hero-symbol processing-symbol"><Icon/></div><span className="eyebrow">{t.local}</span><h1 ref={heading} tabIndex={-1}>{t.processing}</h1><div className="pipeline">{t.pipeline.map((label,i) => <div key={label} className={i < step ? 'finished' : i === step ? 'running' : ''}><span>{i <= step ? <Icon kind="check"/> : String(i+1).padStart(2,'0')}</span>{label}</div>)}</div><p role="status" className="sr-only">{t.pipeline[step]}</p><div className="meter"><span style={{ width: `${(step+1)/7*100}%` }}/></div></section>}
+ {screen === 'result' && <><div className="screen-heading"><span className="eyebrow">03 / {t.steps[2]}</span><h1 ref={heading} tabIndex={-1}>{t.resultTitle}</h1></div><section className="card result-card"><div className="result-top"><div>{status}<h2 dir="auto">{lead.company}</h2></div><span className="result-agent"><Icon/></span></div><div className="metrics">{[[t.serviceFit,t.fits[result.serviceFit]],[t.budgetFit,t.fits[result.budgetFit]],[t.intent,t.fits[result.intent]],[t.priority,t.priorities[result.priority]]].map(([label,value]) => <div key={label}><small>{label}</small><strong>{value}</strong></div>)}</div>{summary}<section><h3>{t.why}</h3>{reasons}</section><section className="action-box"><h3>{t.action}</h3><p>{t.actions[result.action]}</p></section><div className="result-actions"><button className="primary" onClick={() => setScreen('company')}>{t.companyCta}<Icon kind="arrow" className="arrow"/></button><button className="secondary" onClick={() => setScreen('form')}>{t.resultBack}</button></div></section></>}
+ {screen === 'company' && <><div className="screen-heading compact-heading"><span className="eyebrow">04 / {t.steps[3]}</span><h1 ref={heading} tabIndex={-1}>{t.workspace}</h1><p>{t.workspaceSub}</p></div><div className="workspace"><section className="card inbox"><h2><Icon kind="inbox"/>{t.inbox}</h2><small>{t.record}</small><div className="lead-record"><div className="avatar">{lead.company.slice(0,1)}</div><h3 dir="auto">{lead.company}</h3><p dir="auto">{lead.name}</p>{status}<small>{t.priority}: {t.priorities[result.priority]}</small></div></section><article className="card detail"><div className="detail-heading"><h2 dir="auto">{lead.company}</h2>{status}</div><section><h3>{t.contact}</h3><p dir="auto">{lead.name} · {lead.company}</p></section><section><h3>{t.original}</h3><p className="request" dir="auto">{lead.need}</p><div className="request-meta"><span>{t.services[lead.service]}</span><span>{t.budgets[lead.budget]}</span><span>{t.timelines[lead.timeline]}</span></div></section>{summary}<section><h3>{t.qualification}</h3><p className="qualification-line">{status}<span>{t.priority}: {t.priorities[result.priority]}</span></p><h3>{t.reasonsTitle}</h3>{reasons}</section><section className="action-box"><h3>{t.next}</h3><p>{t.actions[result.action]}</p></section></article></div><section className="completion"><span className="positive"><Icon kind="check"/></span><h2>{t.complete}</h2><p>{t.completeText}</p><div className="completion-actions"><button className="primary" onClick={reset}>{t.reset}<Icon kind="arrow" className="arrow"/></button></div></section></>}
+ </main><footer><details><summary><span className="dot"/>{t.disclosureTitle}</summary><p>{t.disclosure}</p></details><span className="footer-mark"><Icon/>{t.agent}</span></footer></div>;
+}
